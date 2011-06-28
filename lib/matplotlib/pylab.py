@@ -241,7 +241,8 @@ import matplotlib.dates  # Do we need this at all?
 
 ## We are still importing too many things from mlab; more cleanup is needed.
 
-from matplotlib.mlab import griddata, stineman_interp, slopes, \
+from matplotlib.mlab import griddata, griddatanearest, griddatalinear, \
+    stineman_interp, slopes, \
     inside_poly, poly_below, poly_between, \
     is_closed_polygon, path_length, distances_along_curve, vector_lengths
 

@@ -2803,6 +2803,88 @@ def griddata(x,y,z,xi,yi,interp='nn'):
     return zo
 griddata._reported = False
 
+def griddatanearest(x,y,z,xi,yi):
+    """
+    zi = griddata(x,y,z,xi,yi) fits a surface of the form z = f(x,y)
+    to the data in the (usually) nonuniformly spaced vectors (x,y,z).
+    griddata interpolates this surface at the points specified by (xi,yi)
+    to produce zi. xi and yi must describe a regular grid, can be
+    either 1D or 2D, but must be monotonically increasing.
+
+    A masked array is returned if any grid points are outside convex
+    hull defined by input data (no extrapolation is done).
+
+    Uses nearest neighbor interpolation based on Delaunay triangulation.
+    """
+    import matplotlib.delaunay as delaunay
+    if xi.ndim != yi.ndim:
+        raise TypeError("inputs xi and yi must have same number of dimensions (1 or 2)")
+    if xi.ndim != 1 and xi.ndim != 2:
+        raise TypeError("inputs xi and yi must be 1D or 2D.")
+    if not len(x)==len(y)==len(z):
+        raise TypeError("inputs x,y,z must all be 1D arrays of the same length")
+    # remove masked points.
+    if hasattr(z,'mask'):
+        x = x.compress(z.mask == False)
+        y = y.compress(z.mask == False)
+        z = z.compressed()
+    if xi.ndim != yi.ndim:
+        raise TypeError("inputs xi and yi must have same number of dimensions (1 or 2)")
+    if xi.ndim != 1 and xi.ndim != 2:
+        raise TypeError("inputs xi and yi must be 1D or 2D.")
+    if xi.ndim == 1:
+        xi,yi = np.meshgrid(xi,yi)
+    # triangulate data
+    tri = delaunay.Triangulation(x,y)
+    # interpolate data
+    interp = tri.nearest_interpolator(z)
+    zo = interp(xi,yi)
+    # mask points on grid outside convex hull of input data.
+    if np.any(np.isnan(zo)):
+        zo = np.ma.masked_where(np.isnan(zo),zo)
+    return zo
+
+def griddatalinear(x,y,z,xi,yi):
+    """
+    zi = griddata(x,y,z,xi,yi) fits a surface of the form z = f(x,y)
+    to the data in the (usually) nonuniformly spaced vectors (x,y,z).
+    griddata interpolates this surface at the points specified by (xi,yi)
+    to produce zi. xi and yi must describe a regular grid, can be
+    either 1D or 2D, but must be monotonically increasing.
+
+    A masked array is returned if any grid points are outside convex
+    hull defined by input data (no extrapolation is done).
+
+    Uses linear interpolation based on Delaunay triangulation.
+    """
+    import matplotlib.delaunay as delaunay
+    if xi.ndim != yi.ndim:
+        raise TypeError("inputs xi and yi must have same number of dimensions (1 or 2)")
+    if xi.ndim != 1 and xi.ndim != 2:
+        raise TypeError("inputs xi and yi must be 1D or 2D.")
+    if not len(x)==len(y)==len(z):
+        raise TypeError("inputs x,y,z must all be 1D arrays of the same length")
+    # remove masked points.
+    if hasattr(z,'mask'):
+        x = x.compress(z.mask == False)
+        y = y.compress(z.mask == False)
+        z = z.compressed()
+    if xi.ndim != yi.ndim:
+        raise TypeError("inputs xi and yi must have same number of dimensions (1 or 2)")
+    if xi.ndim != 1 and xi.ndim != 2:
+        raise TypeError("inputs xi and yi must be 1D or 2D.")
+    if xi.ndim == 1:
+        xi,yi = np.meshgrid(xi,yi)
+    # triangulate data
+    tri = delaunay.Triangulation(x,y)
+    # interpolate data
+    interp = tri.linear_interpolator(z)
+    zo = interp(xi,yi)
+    # mask points on grid outside convex hull of input data.
+    if np.any(np.isnan(zo)):
+        zo = np.ma.masked_where(np.isnan(zo),zo)
+    return zo
+
 ##################################################
 # Linear interpolation algorithms
 ##################################################

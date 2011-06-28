@@ -11,7 +11,7 @@ from itertools import izip
 import numpy as np
 
 from matplotlib._delaunay import delaunay
-from interpolate import LinearInterpolator, NNInterpolator
+from interpolate import LinearInterpolator, NearestInterpolator, NNInterpolator
 
 __all__ = ['Triangulation', 'DuplicatePointWarning']
 
@@ -188,6 +188,21 @@ class Triangulation(object):
             z = z[self.j_unique]
 
         return LinearInterpolator(self, z, default_value)
+
+    def nearest_interpolator(self, z, default_value=np.nan):
+        """Get an object which can interpolate within the convex hull by
+        assigning a plane to each triangle.
+
+        z -- an array of floats giving the known function values at each point
+          in the triangulation.
+        """
+        z = np.asarray(z, dtype=np.float64)
+        if z.shape != self.old_shape:
+            raise ValueError("z must be the same shape as x and y")
+        if self.j_unique is not None:
+            z = z[self.j_unique]
+
+        return NearestInterpolator(self, z, default_value)
 
     def nn_interpolator(self, z, default_value=np.nan):
         """Get an object which can interpolate within the convex hull by

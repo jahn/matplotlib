@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <map>
 #include <iostream>
+#include <values.h>
 
 #include "VoronoiDiagramGenerator.h"
 #include "delaunay_utils.h"
@@ -309,6 +310,146 @@ static PyObject *linear_interpolate_grid(double x0, double x1, int xsteps,
     return z;
 }
 
+static PyObject *linear_interpolate_nonuniform_grid(int xsteps, double *xint, 
+    int ysteps, double *yint,
+    PyObject *planes, double defvalue,
+    int npoints, double *x, double *y, int *nodes, int *neighbors)
+{
+    int ix, iy;
+    double x0, targetx, targety;
+    int rowtri, coltri, tri;
+    PyObject *z;
+    double *z_ptr;
+    intp dims[2];
+
+    dims[0] = ysteps;
+    dims[1] = xsteps;
+    z = PyArray_SimpleNew(2, dims, PyArray_DOUBLE);
+    if (!z) return NULL;
+    z_ptr = (double*)PyArray_DATA(z);
+
+    x0 = xint[0];
+
+    rowtri = 0;
+    for (iy=0; iy<ysteps; iy++) {
+        targety = yint[iy];
+        rowtri = walking_triangles(rowtri, x0, targety, x, y, nodes, neighbors);
+        tri = rowtri;
+        for (ix=0; ix<xsteps; ix++) {
+            targetx = xint[ix];
+            INDEXN(z_ptr, xsteps, iy, ix) = linear_interpolate_single(
+                targetx, targety,
+                x, y, nodes, neighbors, planes, defvalue, tri, &coltri);
+            if (coltri != -1) tri = coltri;
+        }
+    }
+
+    return z;
+}
+
+void linear_interpolate_unstructured(int size, double *intx, double *inty,
+    double defvalue,
+    int npoints, double *x, double *y, PyObject *planes, int *nodes, int *neighbors,
+    double *intz)
+{
+    int i;
+    double targetx, targety;
+    int coltri, tri;
+
+    tri = 0;
+    for (i=0; i<size; i++) {
+        targetx = intx[i];
+        targety = inty[i];
+        intz[i] = linear_interpolate_single(
+            targetx, targety,
+            x, y, nodes, neighbors, planes, defvalue, tri, &coltri);
+        if (coltri != -1) tri = coltri;
+    }
+}
+
+#define SQR(_x) ((_x)*(_x))
+
+static double nearest_interpolate_single(double targetx, double targety,
+    double *x, double *y, double *z, int *nodes, int *neighbors,
+    double defvalue, int start_triangle, int *end_triangle)
+{
+    int inode, imin;
+    double dd, ddmin;
+    if (start_triangle == -1) start_triangle = 0;
+    *end_triangle = walking_triangles(start_triangle, targetx, targety,
+        x, y, nodes, neighbors);
+    if (*end_triangle == -1) return defvalue;
+    ddmin = MAXDOUBLE;
+    imin = 0;
+    for (inode=0; inode<3; inode++) {
+        dd = SQR(targetx - x[INDEX3(nodes,*end_triangle,inode)])
+           + SQR(targety - y[INDEX3(nodes,*end_triangle,inode)]);
+        if (dd < ddmin) {
+            ddmin = dd;
+            imin = inode;
+        }
+    }
+    return z[INDEX3(nodes,*end_triangle,imin)];
+}
+
+static PyObject *nearest_interpolate_grid(double x0, double x1, int xsteps,
+    double y0, double y1, int ysteps,
+    double defvalue,
+    int npoints, double *x, double *y, double *z, int *nodes, int *neighbors)
+{
+    int ix, iy;
+    double dx, dy, targetx, targety;
+    int rowtri, coltri, tri;
+    PyObject *intz;
+    double *intz_ptr;
+    intp dims[2];
+
+    dims[0] = ysteps;
+    dims[1] = xsteps;
+    intz = PyArray_SimpleNew(2, dims, PyArray_DOUBLE);
+    if (!intz) return NULL;
+    intz_ptr = (double*)PyArray_DATA(intz);
+
+    dx = (x1 - x0) / (xsteps-1);
+    dy = (y1 - y0) / (ysteps-1);
+
+    rowtri = 0;
+    for (iy=0; iy<ysteps; iy++) {
+        targety = y0 + dy*iy;
+        rowtri = walking_triangles(rowtri, x0, targety, x, y, nodes, neighbors);
+        tri = rowtri;
+        for (ix=0; ix<xsteps; ix++) {
+            targetx = x0 + dx*ix;
+            INDEXN(intz_ptr, xsteps, iy, ix) = nearest_interpolate_single(
+                targetx, targety,
+                x, y, z, nodes, neighbors, defvalue, tri, &coltri);
+            if (coltri != -1) tri = coltri;
+        }
+    }
+
+    return intz;
+}
+
+void nearest_interpolate_unstructured(int size, double *intx, double *inty,
+    double defvalue,
+    int npoints, double *x, double *y, double *z, int *nodes, int *neighbors,
+    double *intz)
+{
+    int i;
+    double targetx, targety;
+    int coltri, tri;
+
+    tri = 0;
+    for (i=0; i<size; i++) {
+        targetx = intx[i];
+        targety = inty[i];
+        intz[i] = nearest_interpolate_single(
+            targetx, targety,
+            x, y, z, nodes, neighbors, defvalue, tri, &coltri);
+        if (coltri != -1) tri = coltri;
+    }
+}
+
 static PyObject *compute_planes_method(PyObject *self, PyObject *args)
 {
     PyObject *pyx, *pyy, *pyz, *pynodes;
@@ -367,6 +508,65 @@ fail:
     Py_XDECREF(z);
     Py_XDECREF(nodes);
     return NULL;
+}
+
+static PyObject *nearest_interpolate_method(PyObject *self, PyObject *args)
+{
+    double x0, x1, y0, y1, defvalue;
+    int xsteps, ysteps;
+    PyObject *pyz, *pyx, *pyy, *pynodes, *pyneighbors, *grid = NULL;
+    PyObject *x = NULL, *y = NULL, *z = NULL, *nodes = NULL, *neighbors = NULL;
+    int npoints;
+
+
+    if (!PyArg_ParseTuple(args, "ddiddidOOOOO", &x0, &x1, &xsteps, &y0, &y1, &ysteps,
+           &defvalue, &pyx, &pyy, &pyz, &pynodes, &pyneighbors)) {
+        return NULL;
+    }
+    x = PyArray_FROMANY(pyx, PyArray_DOUBLE, 1, 1, NPY_IN_ARRAY);
+    if (!x) {
+        PyErr_SetString(PyExc_ValueError, "x must be a 1-D array of floats");
+        goto exit;
+    }
+    y = PyArray_FROMANY(pyy, PyArray_DOUBLE, 1, 1, NPY_IN_ARRAY);
+    if (!y) {
+        PyErr_SetString(PyExc_ValueError, "y must be a 1-D array of floats");
+        goto exit;
+    }
+    z = PyArray_FROMANY(pyz, PyArray_DOUBLE, 1, 1, NPY_IN_ARRAY);
+    if (!z) {
+        PyErr_SetString(PyExc_ValueError, "z must be a 1-D array of floats");
+        goto exit;
+    }
+    npoints = PyArray_DIM(x, 0);
+    if (PyArray_DIM(y, 0) != npoints) {
+        PyErr_SetString(PyExc_ValueError, "x,y arrays must be of equal length");
+        goto exit;
+    }
+    nodes = PyArray_FROMANY(pynodes, PyArray_INT, 2, 2, NPY_IN_ARRAY);
+    if (!nodes) {
+        PyErr_SetString(PyExc_ValueError, "nodes must be a 2-D array of ints");
+        goto exit;
+    }
+    neighbors = PyArray_FROMANY(pyneighbors, PyArray_INT, 2, 2, NPY_IN_ARRAY);
+    if (!neighbors) {
+        PyErr_SetString(PyExc_ValueError, "neighbors must be a 2-D array of ints");
+        goto exit;
+    }
+
+    grid = nearest_interpolate_grid(x0, x1, xsteps, y0, y1, ysteps,
+        defvalue, npoints,
+        (double*)PyArray_DATA(x), (double*)PyArray_DATA(y), (double*)PyArray_DATA(z), 
+        (int*)PyArray_DATA(nodes), (int*)PyArray_DATA(neighbors));
+
+ exit:
+    Py_XDECREF(x);
+    Py_XDECREF(y);
+    Py_XDECREF(z);
+    Py_XDECREF(nodes);
+    Py_XDECREF(neighbors);
+
+    return grid;
 }
 
 static PyObject *linear_interpolate_method(PyObject *self, PyObject *args)
@@ -434,6 +634,239 @@ fail:
     Py_XDECREF(neighbors);
     return NULL;
 }
+
+#define CLEANUP \
+    Py_XDECREF(x);\
+    Py_XDECREF(y);\
+    Py_XDECREF(intx);\
+    Py_XDECREF(inty);\
+    Py_XDECREF(planes);\
+    Py_XDECREF(nodes);\
+    Py_XDECREF(neighbors);\
+    Py_XDECREF(intz);
+
+#define PyArray_ND(arr) (((PyArrayObject*)arr)->nd)
+
+static PyObject *linear_interpolate_unstructured_method(PyObject *self, PyObject *args)
+{
+    PyObject *pyx, *pyy, *pyplanes, *pynodes, *pyneighbors, *pyintx, *pyinty;
+    PyObject *x = NULL, *y = NULL, *planes = NULL, *nodes = NULL,
+        *neighbors = NULL, *intx = NULL, *inty = NULL, *intz = NULL;
+    double defvalue;
+    int size, npoints, ntriangles;
+
+    if (!PyArg_ParseTuple(args, "OOdOOOOO", &pyintx, &pyinty, &defvalue,
+        &pyx, &pyy, &pyplanes, &pynodes, &pyneighbors)) {
+        return NULL;
+    }
+    x = PyArray_FROMANY(pyx, PyArray_DOUBLE, 1, 1, NPY_IN_ARRAY);
+    if (!x) {
+        PyErr_SetString(PyExc_ValueError, "x must be a 1-D array of floats");
+        CLEANUP
+        return NULL;
+    }
+    y = PyArray_FROMANY(pyy, PyArray_DOUBLE, 1, 1, NPY_IN_ARRAY);
+    if (!y) {
+        PyErr_SetString(PyExc_ValueError, "y must be a 1-D array of floats");
+        CLEANUP
+        return NULL;
+    }
+    npoints = PyArray_DIM(x, 0);
+    if ((PyArray_DIM(y, 0) != npoints)) {
+        PyErr_SetString(PyExc_ValueError, "x,y arrays must be of equal length");
+        CLEANUP
+        return NULL;
+    }
+    planes = PyArray_FROMANY(pyplanes, PyArray_DOUBLE, 2, 2, NPY_IN_ARRAY);
+    if (!planes) {
+        PyErr_SetString(PyExc_ValueError, "planes must be a 2-D array of floats");
+        CLEANUP
+        return NULL;
+    }
+    nodes = PyArray_FROMANY(pynodes, PyArray_INT, 2, 2, NPY_IN_ARRAY);
+    if (!nodes) {
+        PyErr_SetString(PyExc_ValueError, "nodes must be a 2-D array of ints");
+        CLEANUP
+        return NULL;
+    }
+    neighbors = PyArray_FROMANY(pyneighbors, PyArray_INT, 2, 2, NPY_IN_ARRAY);
+    if (!neighbors) {
+        PyErr_SetString(PyExc_ValueError, "neighbors must be a 2-D array of ints");
+        CLEANUP
+        return NULL;
+    }
+    ntriangles = PyArray_DIM(neighbors, 0);
+    if ((PyArray_DIM(nodes, 0) != ntriangles)) {
+        PyErr_SetString(PyExc_ValueError, "nodes,neighbors must be of equal length");
+        CLEANUP
+        return NULL;
+    }
+    intx = PyArray_FROM_OTF(pyintx, PyArray_DOUBLE, NPY_IN_ARRAY);
+    if (!intx) {
+        PyErr_SetString(PyExc_ValueError, "intx must be an array of floats");
+        CLEANUP
+        return NULL;
+    }
+    inty = PyArray_FROM_OTF(pyinty, PyArray_DOUBLE, NPY_IN_ARRAY);
+    if (!inty) {
+        PyErr_SetString(PyExc_ValueError, "inty must be an array of floats");
+        CLEANUP
+        return NULL;
+    }
+    if (PyArray_ND(intx) != PyArray_ND(inty)) {
+        PyErr_SetString(PyExc_ValueError, "intx,inty must have same shapes");
+        CLEANUP
+        return NULL;
+    }
+    for (int i=0; i<PyArray_ND(intx); i++) {
+        if (PyArray_DIM(intx, i) != PyArray_DIM(inty, i)) {
+            PyErr_SetString(PyExc_ValueError, "intx,inty must have same shapes");
+            CLEANUP
+            return NULL;
+        }
+    }
+    intz = PyArray_SimpleNew(PyArray_ND(intx), PyArray_DIMS(intx), PyArray_DOUBLE);
+    if (!intz) {
+        CLEANUP
+        return NULL;
+    }
+
+    size = PyArray_Size(intx);
+    linear_interpolate_unstructured(size, (double*)PyArray_DATA(intx),
+        (double*)PyArray_DATA(inty),
+        defvalue,
+        npoints, (double*)PyArray_DATA(x), (double*)PyArray_DATA(y),
+        (PyObject*)planes, (int*)PyArray_DATA(nodes), (int*)PyArray_DATA(neighbors),
+        (double*)PyArray_DATA(intz));
+
+    Py_XDECREF(x);
+    Py_XDECREF(y);
+    Py_XDECREF(intx);
+    Py_XDECREF(inty);
+    Py_XDECREF(planes);
+    Py_XDECREF(nodes);
+    Py_XDECREF(neighbors);
+    return intz;
+}
+
+#undef CLEANUP
+
+#define CLEANUP \
+    Py_XDECREF(x);\
+    Py_XDECREF(y);\
+    Py_XDECREF(z);\
+    Py_XDECREF(intx);\
+    Py_XDECREF(inty);\
+    Py_XDECREF(nodes);\
+    Py_XDECREF(neighbors);\
+    Py_XDECREF(intz);
+
+#define PyArray_ND(arr) (((PyArrayObject*)arr)->nd)
+
+static PyObject *nearest_interpolate_unstructured_method(PyObject *self, PyObject *args)
+{
+    PyObject *pyx, *pyy, *pyz, *pynodes, *pyneighbors, *pyintx, *pyinty;
+    PyObject *x = NULL, *y = NULL, *z = NULL, *nodes = NULL,
+        *neighbors = NULL, *intx = NULL, *inty = NULL, *intz = NULL;
+    double defvalue;
+    int size, npoints, ntriangles;
+
+    if (!PyArg_ParseTuple(args, "OOdOOOOO", &pyintx, &pyinty, &defvalue,
+        &pyx, &pyy, &pyz, &pynodes, &pyneighbors)) {
+        return NULL;
+    }
+    x = PyArray_FROMANY(pyx, PyArray_DOUBLE, 1, 1, NPY_IN_ARRAY);
+    if (!x) {
+        PyErr_SetString(PyExc_ValueError, "x must be a 1-D array of floats");
+        CLEANUP
+        return NULL;
+    }
+    y = PyArray_FROMANY(pyy, PyArray_DOUBLE, 1, 1, NPY_IN_ARRAY);
+    if (!y) {
+        PyErr_SetString(PyExc_ValueError, "y must be a 1-D array of floats");
+        CLEANUP
+        return NULL;
+    }
+    z = PyArray_FROMANY(pyz, PyArray_DOUBLE, 1, 1, NPY_IN_ARRAY);
+    if (!z) {
+        PyErr_SetString(PyExc_ValueError, "z must be a 1-D array of floats");
+        CLEANUP
+        return NULL;
+    }
+    npoints = PyArray_DIM(x, 0);
+    if ((PyArray_DIM(y, 0) != npoints) || (PyArray_DIM(z, 0) != npoints)) {
+        PyErr_SetString(PyExc_ValueError, "x,y,z arrays must be of equal length");
+        CLEANUP
+        return NULL;
+    }
+    nodes = PyArray_FROMANY(pynodes, PyArray_INT, 2, 2, NPY_IN_ARRAY);
+    if (!nodes) {
+        PyErr_SetString(PyExc_ValueError, "nodes must be a 2-D array of ints");
+        CLEANUP
+        return NULL;
+    }
+    neighbors = PyArray_FROMANY(pyneighbors, PyArray_INT, 2, 2, NPY_IN_ARRAY);
+    if (!neighbors) {
+        PyErr_SetString(PyExc_ValueError, "neighbors must be a 2-D array of ints");
+        CLEANUP
+        return NULL;
+    }
+    ntriangles = PyArray_DIM(neighbors, 0);
+    if ((PyArray_DIM(nodes, 0) != ntriangles)) {
+        PyErr_SetString(PyExc_ValueError, "nodes,neighbors must be of equal length");
+        CLEANUP
+        return NULL;
+    }
+    intx = PyArray_FROM_OTF(pyintx, PyArray_DOUBLE, NPY_IN_ARRAY);
+    if (!intx) {
+        PyErr_SetString(PyExc_ValueError, "intx must be an array of floats");
+        CLEANUP
+        return NULL;
+    }
+    inty = PyArray_FROM_OTF(pyinty, PyArray_DOUBLE, NPY_IN_ARRAY);
+    if (!inty) {
+        PyErr_SetString(PyExc_ValueError, "inty must be an array of floats");
+        CLEANUP
+        return NULL;
+    }
+    if (PyArray_ND(intx) != PyArray_ND(inty)) {
+        PyErr_SetString(PyExc_ValueError, "intx,inty must have same shapes");
+        CLEANUP
+        return NULL;
+    }
+    for (int i=0; i<PyArray_ND(intx); i++) {
+        if (PyArray_DIM(intx, i) != PyArray_DIM(inty, i)) {
+            PyErr_SetString(PyExc_ValueError, "intx,inty must have same shapes");
+            CLEANUP
+            return NULL;
+        }
+    }
+    intz = PyArray_SimpleNew(PyArray_ND(intx), PyArray_DIMS(intx), PyArray_DOUBLE);
+    if (!intz) {
+        CLEANUP
+        return NULL;
+    }
+
+    size = PyArray_Size(intx);
+    nearest_interpolate_unstructured(size, (double*)PyArray_DATA(intx),
+        (double*)PyArray_DATA(inty),
+        defvalue,
+        npoints, (double*)PyArray_DATA(x), (double*)PyArray_DATA(y),
+        (double*)PyArray_DATA(z),
+        (int*)PyArray_DATA(nodes), (int*)PyArray_DATA(neighbors),
+        (double*)PyArray_DATA(intz));
+
+    Py_XDECREF(x);
+    Py_XDECREF(y);
+    Py_XDECREF(z);
+    Py_XDECREF(intx);
+    Py_XDECREF(inty);
+    Py_XDECREF(nodes);
+    Py_XDECREF(neighbors);
+    return intz;
+}
+
+#undef CLEANUP
 
 // Thanks to C++'s memory rules, we can't use the usual "goto fail;" method of
 // error handling.
@@ -718,6 +1151,12 @@ static PyMethodDef delaunay_methods[] = {
     {"compute_planes", (PyCFunction)compute_planes_method, METH_VARARGS,
         ""},
     {"linear_interpolate_grid", (PyCFunction)linear_interpolate_method, METH_VARARGS,
+        ""},
+    {"linear_interpolate_unstructured", (PyCFunction)linear_interpolate_unstructured_method, METH_VARARGS,
+        ""},
+    {"nearest_interpolate_grid", (PyCFunction)nearest_interpolate_method, METH_VARARGS,
+        ""},
+    {"nearest_interpolate_unstructured", (PyCFunction)nearest_interpolate_unstructured_method, METH_VARARGS,
         ""},
     {"nn_interpolate_grid", (PyCFunction)nn_interpolate_method, METH_VARARGS,
         ""},
