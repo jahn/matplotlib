@@ -1,9 +1,11 @@
 import numpy as np
 
 from matplotlib._delaunay import compute_planes, linear_interpolate_grid, nn_interpolate_grid
+from matplotlib._delaunay import linear_interpolate_unstructured
+from matplotlib._delaunay import nearest_interpolate_grid, nearest_interpolate_unstructured
 from matplotlib._delaunay import nn_interpolate_unstructured
 
-__all__ = ['LinearInterpolator', 'NNInterpolator']
+__all__ = ['LinearInterpolator', 'NearestInterpolator', 'NNInterpolator']
 
 def slice2gridspec(key):
     """Convert a 2-tuple of slices to start,stop,steps for x and y.
@@ -84,6 +86,52 @@ class LinearInterpolator(object):
             self.planes, self.triangulation.x, self.triangulation.y,
             self.triangulation.triangle_nodes, self.triangulation.triangle_neighbors)
         return grid
+
+    def __call__(self, intx, inty):
+        intz = linear_interpolate_unstructured(intx, inty, self.default_value,
+            self.triangulation.x, self.triangulation.y,
+            self.planes,
+            self.triangulation.triangle_nodes,
+            self.triangulation.triangle_neighbors)
+        return intz
+
+class NearestInterpolator(object):
+    """Interpolate a function defined on the nodes of a triangulation by
+    using the nearest node in the triangulation.
+
+    NearestInterpolator(triangulation, z, default_value=numpy.nan)
+
+    triangulation -- Triangulation instance
+    z -- the function values at each node of the triangulation
+    default_value -- a float giving the default value should the interpolating
+      point happen to fall outside of the convex hull of the triangulation
+
+    At the moment, the only regular rectangular grids are supported for
+    interpolation.
+
+        vals = interp[ystart:ystop:ysteps*1j, xstart:xstop:xsteps*1j]
+
+    vals would then be a (ysteps, xsteps) array containing the interpolated
+    values. These arguments are interpreted the same way as numpy.mgrid.
+    """
+    def __init__(self, triangulation, z, default_value=np.nan):
+        self.triangulation = triangulation
+        self.z = np.asarray(z, dtype=np.float64)
+        self.default_value = default_value
+
+    def __getitem__(self, key):
+        x0, x1, xstep, y0, y1, ystep = slice2gridspec(key)
+        grid = nearest_interpolate_grid(x0, x1, xstep, y0, y1, ystep, self.default_value,
+            self.triangulation.x, self.triangulation.y, self.z,
+            self.triangulation.triangle_nodes, self.triangulation.triangle_neighbors)
+        return grid
+
+    def __call__(self, intx, inty):
+        intz = nearest_interpolate_unstructured(intx, inty, self.default_value,
+            self.triangulation.x, self.triangulation.y, self.z,
+            self.triangulation.triangle_nodes,
+            self.triangulation.triangle_neighbors)
+        return intz
 
 class NNInterpolator(object):
     """Interpolate a function defined on the nodes of a triangulation by
