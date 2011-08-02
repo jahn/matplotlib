@@ -242,7 +242,7 @@ def validate_font_properties(s):
     parse_fontconfig_pattern(s)
     return s
 
-validate_fontset = ValidateInStrings('fontset', ['cm', 'stix', 'stixsans', 'custom'])
+validate_fontset = ValidateInStrings('fontset', ['cm', 'stix', 'stixsans', 'custom', 'customsans'])
 
 validate_mathtext_default = ValidateInStrings(
     'default', "rm cal it tt sf bf default bb frak circled scr regular".split())
