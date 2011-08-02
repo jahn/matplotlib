@@ -297,7 +297,7 @@ def validate_font_properties(s):
 
 validate_fontset = ValidateInStrings(
     'fontset',
-    ['cm', 'stix', 'stixsans', 'custom'])
+    ['cm', 'stix', 'stixsans', 'custom', 'customsans'])
 
 validate_mathtext_default = ValidateInStrings(
     'default',
