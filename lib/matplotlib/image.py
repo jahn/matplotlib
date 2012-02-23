@@ -605,8 +605,8 @@ class AxesImage(_AxesImageBase):
         im.apply_translation(tx, ty)
 
         l, b, r, t = self.axes.bbox.extents
-        widthDisplay = (round(r*magnification) + 0.5) - (round(l*magnification) - 0.5)
-        heightDisplay = (round(t*magnification) + 0.5) - (round(b*magnification) - 0.5)
+        widthDisplay = (round(r*magnification)) - (round(l*magnification))
+        heightDisplay = (round(t*magnification)) - (round(b*magnification))
 
         # resize viewport to display
         rx = widthDisplay / numcols
@@ -708,8 +708,8 @@ class NonUniformImage(AxesImage):
 
         x0, y0, v_width, v_height = self.axes.viewLim.bounds
         l, b, r, t = self.axes.bbox.extents
-        width = (round(r) + 0.5) - (round(l) - 0.5)
-        height = (round(t) + 0.5) - (round(b) - 0.5)
+        width = (round(r)) - (round(l))
+        height = (round(t)) - (round(b))
         width *= magnification
         height *= magnification
         im = _image.pcolor(self._Ax, self._Ay, A,
@@ -828,8 +828,8 @@ class PcolorImage(martist.Artist, cm.ScalarMappable):
         bg = mcolors.colorConverter.to_rgba(fc, 0)
         bg = (np.array(bg)*255).astype(np.uint8)
         l, b, r, t = self.axes.bbox.extents
-        width = (round(r) + 0.5) - (round(l) - 0.5)
-        height = (round(t) + 0.5) - (round(b) - 0.5)
+        width = (round(r)) - (round(l))
+        height = (round(t)) - (round(b))
         width = width * magnification
         height = height * magnification
         if self._rgbacache is None:
