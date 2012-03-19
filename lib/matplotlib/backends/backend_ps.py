@@ -533,6 +533,11 @@ grestore
                                                simplify=simplify):
             if code == Path.MOVETO:
                 ps.append("%g %g m" % tuple(points))
+            elif code == Path.CLOSEPOLY:
+                ps.append("cl")
+            elif last_points is None:
+                # The other operations require a previous point
+                raise ValueError('Path lacks initial MOVETO')
             elif code == Path.LINETO:
                 ps.append("%g %g l" % tuple(points))
             elif code == Path.CURVE3:
@@ -541,8 +546,6 @@ grestore
                           tuple(points[2:]))
             elif code == Path.CURVE4:
                 ps.append("%g %g %g %g %g %g c" % tuple(points))
-            elif code == Path.CLOSEPOLY:
-                ps.append("cl")
             last_points = points
 
         ps = "\n".join(ps)
@@ -588,13 +591,29 @@ grestore
 
         # construct the generic marker command:
         ps_cmd = ['/o {', 'gsave', 'newpath', 'translate'] # dont want the translate to be global
+
+        lw = gc.get_linewidth()
+        stroke = lw != 0.0
+        if stroke:
+            ps_cmd.append('%.1f setlinewidth' % lw)
+            jint = gc.get_joinstyle()
+            ps_cmd.append('%d setlinejoin' % jint)
+            cint = gc.get_capstyle()
+            ps_cmd.append('%d setlinecap' % cint)
+
         ps_cmd.append(self._convert_path(marker_path, marker_trans,
                                          simplify=False))
 
         if rgbFace:
-            ps_cmd.extend(['gsave', ps_color, 'fill', 'grestore'])
+            if stroke:
+                ps_cmd.append('gsave')
+            ps_cmd.extend([ps_color, 'fill'])
+            if stroke:
+                ps_cmd.append('grestore')
 
-        ps_cmd.extend(['stroke', 'grestore', '} bind def'])
+        if stroke:
+            ps_cmd.append('stroke')
+        ps_cmd.extend(['grestore', '} bind def'])
 
         for vertices, code in path.iter_segments(trans, simplify=False):
             if len(vertices):
@@ -855,8 +874,7 @@ grestore
         write = self._pswriter.write
         if debugPS and command:
             write("% "+command+"\n")
-        mightstroke = (gc.get_linewidth() > 0.0 and
-                  (len(gc.get_rgb()) <= 3 or gc.get_rgb()[3] != 0.0))
+        mightstroke = gc.shouldstroke()
         stroke = stroke and mightstroke
         fill = (fill and rgbFace is not None and
                 (len(rgbFace) <= 3 or rgbFace[3] != 0.0))
@@ -917,6 +935,9 @@ class GraphicsContextPS(GraphicsContextBase):
                 'round':1,
                 'bevel':2}[GraphicsContextBase.get_joinstyle(self)]
 
+    def shouldstroke(self):
+        return (self.get_linewidth() > 0.0 and
+                (len(self.get_rgb()) <= 3 or self.get_rgb()[3] != 0.0))
 
 def new_figure_manager(num, *args, **kwargs):
     FigureClass = kwargs.pop('FigureClass', Figure)

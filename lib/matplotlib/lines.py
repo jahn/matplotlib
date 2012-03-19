@@ -306,9 +306,9 @@ class Line2D(Artist):
     def set_fillstyle(self, fs):
         """
         Set the marker fill style; 'full' means fill the whole marker.
-        The other options are for half filled markers
+        'none' means no filling; other options are for half-filled markers.
 
-        ACCEPTS: ['full' | 'left' | 'right' | 'bottom' | 'top']
+        ACCEPTS: ['full' | 'left' | 'right' | 'bottom' | 'top' | 'none']
         """
         self._marker.set_fillstyle(fs)
 
@@ -542,11 +542,16 @@ class Line2D(Artist):
                 if type(snap) == float:
                     snap = renderer.points_to_pixels(self._markersize) >= snap
                 gc.set_snap(snap)
+                gc.set_joinstyle(marker.get_joinstyle())
+                gc.set_capstyle(marker.get_capstyle())
                 marker_path = marker.get_path()
                 marker_trans = marker.get_transform()
                 w = renderer.points_to_pixels(self._markersize)
-                if marker.get_marker() != ',': # Don't scale for pixels
+                if marker.get_marker() != ',':
+                    # Don't scale for pixels, and don't stroke them
                     marker_trans = marker_trans.scale(w)
+                else:
+                    gc.set_linewidth(0)
                 renderer.draw_markers(
                     gc, marker_path, marker_trans, subsampled, affine.frozen(),
                     rgbFace)
@@ -572,15 +577,16 @@ class Line2D(Artist):
     def get_marker(self): return self._marker.get_marker()
 
     def get_markeredgecolor(self):
-        if (is_string_like(self._markeredgecolor) and
-                                    self._markeredgecolor == 'auto'):
+        mec = self._markeredgecolor
+        if (is_string_like(mec) and mec == 'auto'):
             if self._marker.get_marker() in ('.', ','):
                 return self._color
-            if self._marker.is_filled():
+            if self._marker.is_filled() and self.get_fillstyle() != 'none':
                 return 'k'  # Bad hard-wired default...
             else:
                 return self._color
-        return self._markeredgecolor
+        else:
+            return mec
 
     def get_markeredgewidth(self): return self._markeredgewidth
 
@@ -590,10 +596,11 @@ class Line2D(Artist):
         else:
             fc = self._markerfacecolor
 
-        if (fc is None or (is_string_like(fc) and fc.lower()=='none') ):
-            return fc
-        elif (is_string_like(fc) and fc.lower() == 'auto'):
-            return self._color
+        if (is_string_like(fc) and fc.lower() == 'auto'):
+            if self.get_fillstyle() == 'none':
+                return 'none'
+            else:
+                return self._color
         else:
             return fc
 

@@ -313,6 +313,20 @@ def deprecate_svg_embed_char_paths(value):
 
 validate_svg_fonttype = ValidateInStrings('fonttype', ['none', 'path', 'svgfont'])
 
+def validate_hinting(s):
+    if s in (True, False):
+        return s
+    if s.lower() in ('auto', 'native', 'either', 'none'):
+        return s.lower()
+    raise ValueError("hinting should be 'auto', 'native', 'either' or 'none'")
+
+validate_movie_writer = ValidateInStrings('animation.writer',
+    ['ffmpeg', 'ffmpeg_file', 'mencoder', 'mencoder_file'])
+
+validate_movie_frame_fmt = ValidateInStrings('animation.frame_format',
+    ['png', 'jpeg', 'tiff', 'raw', 'rgba'])
+
+
 class ValidateInterval:
     """
     Value must be in interval
@@ -407,7 +421,8 @@ defaultParams = {
     'text.latex.preamble' : [[''], validate_stringlist],
     'text.latex.preview' : [False, validate_bool],
     'text.dvipnghack'     : [None, validate_bool_maybe_none],
-    'text.hinting'        : [True, validate_bool],
+    'text.hinting'        : [True, validate_hinting],
+    'text.hinting_factor' : [8, validate_int],
 
     # The following are deprecated and replaced by, e.g., 'font.style'
     #'text.fontstyle'      : ['normal', str],
@@ -576,6 +591,15 @@ defaultParams = {
     'examples.download' : [True, validate_bool],
     'examples.directory' : ['', str],
 
+    # Animation settings
+    'animation.writer' : ['ffmpeg', validate_movie_writer],
+    'animation.codec' : ['mpeg4', str],
+    'animation.bitrate' : [-1, validate_int],
+    'animation.frame_format' : ['png', validate_movie_frame_fmt], # Controls image format when frames are written to disk
+    'animation.ffmpeg_path' : ['ffmpeg', str], # Path to FFMPEG binary. If just binary name, subprocess uses $PATH.
+    'animation.ffmpeg_args' : ['', validate_stringlist], # Additional arguments for ffmpeg movie writer (using pipes)
+    'animation.mencoder_path' : ['mencoder', str], # Path to FFMPEG binary. If just binary name, subprocess uses $PATH.
+    'animation.mencoder_args' : ['', validate_stringlist], # Additional arguments for mencoder movie writer (using pipes)
 }
 
 if __name__ == '__main__':

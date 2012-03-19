@@ -26,6 +26,7 @@
 #include "agg_scanline_storage_aa.h"
 #include "agg_scanline_storage_bin.h"
 #include "agg_span_allocator.h"
+#include "agg_span_converter.h"
 #include "agg_span_image_filter_gray.h"
 #include "agg_span_image_filter_rgba.h"
 #include "agg_span_interpolator_linear.h"
@@ -442,10 +443,10 @@ RendererAgg::set_clipbox(const Py::Object& cliprect, R& rasterizer)
     double l, b, r, t;
     if (py_convert_bbox(cliprect.ptr(), l, b, r, t))
     {
-        rasterizer.clip_box(std::max(int(mpl_round(l)), 0),
-                            std::max(int(height) - int(mpl_round(b)), 0),
-                            std::min(int(mpl_round(r)), int(width)),
-                            std::min(int(height) - int(mpl_round(t)), int(height)));
+        rasterizer.clip_box(std::max(int(floor(l - 0.5)), 0),
+                            std::max(int(floor(height - b - 0.5)), 0),
+                            std::min(int(floor(r - 0.5)), int(width)),
+                            std::min(int(floor(height - t - 0.5)), int(height)));
     }
     else
     {
@@ -659,7 +660,7 @@ RendererAgg::draw_markers(const Py::Tuple& args)
     // Deal with the difference in y-axis direction
     marker_trans *= agg::trans_affine_scaling(1.0, -1.0);
     trans *= agg::trans_affine_scaling(1.0, -1.0);
-    trans *= agg::trans_affine_translation(0.0, (double)height);
+    trans *= agg::trans_affine_translation(0.5, (double)height + 0.5);
 
     PathIterator       marker_path(marker_path_obj);
     transformed_path_t marker_path_transformed(marker_path, marker_trans);
@@ -745,8 +746,8 @@ RendererAgg::draw_markers(const Py::Tuple& args)
                     continue;
                 }
 
-                x = (double)(int)x;
-                y = (double)(int)y;
+                x = floor(x);
+                y = floor(y);
 
                 // Cull points outside the boundary of the image.
                 // Values that are too large may overflow and create
@@ -781,8 +782,8 @@ RendererAgg::draw_markers(const Py::Tuple& args)
                     continue;
                 }
 
-                x = (double)(int)x;
-                y = (double)(int)y;
+                x = floor(x);
+                y = floor(y);
 
                 // Cull points outside the boundary of the image.
                 // Values that are too large may overflow and create
@@ -984,6 +985,30 @@ RendererAgg::draw_text_image(const Py::Tuple& args)
     return Py::Object();
 }
 
+class span_conv_alpha
+{
+public:
+    typedef agg::rgba8 color_type;
+
+    double m_alpha;
+
+    span_conv_alpha(double alpha) :
+        m_alpha(alpha)
+    {
+    }
+
+    void prepare() {}
+    void generate(color_type* span, int x, int y, unsigned len) const
+    {
+        do
+            {
+                span->a = (agg::int8u)((double)span->a * m_alpha);
+                ++span;
+            }
+        while(--len);
+    }
+};
+
 
 Py::Object
 RendererAgg::draw_image(const Py::Tuple& args)
@@ -1068,11 +1093,14 @@ RendererAgg::draw_image(const Py::Tuple& args)
         typedef agg::span_interpolator_linear<> interpolator_type;
         typedef agg::span_image_filter_rgba_nn<image_accessor_type,
                                                interpolator_type> image_span_gen_type;
+        typedef agg::span_converter<image_span_gen_type, span_conv_alpha> span_conv;
 
         color_span_alloc_type sa;
         image_accessor_type ia(pixf, agg::rgba8(0, 0, 0, 0));
         interpolator_type interpolator(inv_mtx);
         image_span_gen_type image_span_generator(ia, interpolator);
+        span_conv_alpha conv_alpha(alpha);
+        span_conv spans(image_span_generator, conv_alpha);
 
         if (has_clippath)
         {
@@ -1081,12 +1109,12 @@ RendererAgg::draw_image(const Py::Tuple& args)
             typedef agg::renderer_base<pixfmt_amask_type> amask_ren_type;
             typedef agg::renderer_scanline_aa<amask_ren_type,
                                               color_span_alloc_type,
-                                              image_span_gen_type>
+                                              span_conv>
                 renderer_type_alpha;
 
             pixfmt_amask_type pfa(pixFmt, alphaMask);
             amask_ren_type r(pfa);
-            renderer_type_alpha ri(r, sa, image_span_generator);
+            renderer_type_alpha ri(r, sa, spans);
 
             theRasterizer.add_path(rect2);
             agg::render_scanlines(theRasterizer, slineP8, ri);
@@ -1096,11 +1124,11 @@ RendererAgg::draw_image(const Py::Tuple& args)
             typedef agg::renderer_base<pixfmt> ren_type;
             typedef agg::renderer_scanline_aa<ren_type,
                                               color_span_alloc_type,
-                                              image_span_gen_type>
+                                              span_conv>
                 renderer_type;
 
             ren_type r(pixFmt);
-            renderer_type ri(r, sa, image_span_generator);
+            renderer_type ri(r, sa, spans);
 
             theRasterizer.add_path(rect2);
             agg::render_scanlines(theRasterizer, slineP8, ri);
@@ -1111,7 +1139,8 @@ RendererAgg::draw_image(const Py::Tuple& args)
     {
         set_clipbox(gc.cliprect, rendererBase);
         rendererBase.blend_from(
-            pixf, 0, (int)x, (int)(height - (y + image->rowsOut)), alpha * 255);
+            pixf, 0, (int)x, (int)(height - (y + image->rowsOut)),
+            (agg::int8u)(alpha * 255));
     }
 
     rendererBase.reset_clipping(true);
@@ -2239,7 +2268,12 @@ RendererAgg::tostring_rgba_minimized(const Py::Tuple& args)
 
     int newwidth = 0;
     int newheight = 0;
+    #if PY3K
+    Py::Bytes data;
+    #else
     Py::String data;
+    #endif
+
     if (xmin < xmax && ymin < ymax)
     {
         // Expand the bounds by 1 pixel on all sides
@@ -2269,7 +2303,11 @@ RendererAgg::tostring_rgba_minimized(const Py::Tuple& args)
         }
 
         // The Py::String will take over the buffer
-        data = Py::String((const char *)buf, (int)newsize);
+        #if PY3K
+        data = Py::Bytes((const char *)buf, (int) newsize);
+        #else
+        data = Py::String((const char *)buf, (int) newsize);
+        #endif
     }
 
     Py::Tuple bounds(4);

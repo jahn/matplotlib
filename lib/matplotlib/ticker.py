@@ -207,7 +207,7 @@ class Formatter(TickHelper):
         Note, if you use this method, eg in :meth`format_data` or
         call, you probably don't want to use it for
         :meth:`format_data_short` since the toolbar uses this for
-        interative coord reporting and I doubt we can expect GUIs
+        interactive coord reporting and I doubt we can expect GUIs
         across platforms will handle the unicode correctly.  So for
         now the classes that override :meth:`fix_minus` should have an
         explicit :meth:`format_data_short` method
@@ -455,7 +455,7 @@ class ScalarFormatter(Formatter):
             if self._useOffset:
                 self._set_offset(d)
             self._set_orderOfMagnitude(d)
-            self._set_format()
+            self._set_format(vmin, vmax)
 
     def _set_offset(self, range):
         # offset of 20,001 is 20,000, for example
@@ -496,10 +496,19 @@ class ScalarFormatter(Formatter):
         else:
             self.orderOfMagnitude = 0
 
-    def _set_format(self):
+    def _set_format(self, vmin, vmax):
         # set the format string to format all the ticklabels
-        locs = (np.asarray(self.locs)-self.offset) / 10**self.orderOfMagnitude
-        loc_range_oom = int(math.floor(math.log10(np.ptp(locs))))
+        if len(self.locs) < 2:
+            # Temporarily augment the locations with the axis end points.
+            _locs = list(self.locs) + [vmin, vmax]
+        else:
+            _locs = self.locs
+        locs = (np.asarray(_locs)-self.offset) / 10**self.orderOfMagnitude
+        loc_range = np.ptp(locs)
+        if len(self.locs) < 2:
+            # We needed the end points only for the loc_range calculation.
+            locs = locs[:-2]
+        loc_range_oom = int(math.floor(math.log10(loc_range)))
         # first estimate:
         sigfigs = max(0, 3 - loc_range_oom)
         # refined estimate:
@@ -1364,12 +1373,15 @@ class SymmetricalLogLocator(Locator):
     Determine the tick locations for log axes
     """
 
-    def __init__(self, transform, subs=[1.0]):
+    def __init__(self, transform, subs=None):
         """
         place ticks on the location= base**i*subs[j]
         """
         self._transform = transform
-        self._subs = subs
+        if subs is None:
+            self._subs = [1.0]
+        else:
+            self._subs = subs
         self.numticks = 15
 
     def __call__(self):

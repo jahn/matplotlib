@@ -224,10 +224,8 @@ class MathtextBackendAgg(MathtextBackend):
         return result
 
     def get_hinting_type(self):
-        if rcParams['text.hinting']:
-            return LOAD_FORCE_AUTOHINT
-        else:
-            return LOAD_NO_HINTING
+        from matplotlib.backends import backend_agg
+        return backend_agg.get_hinting_flag()
 
 class MathtextBackendBitmap(MathtextBackendAgg):
     def get_results(self, box, used_characters):
@@ -771,7 +769,11 @@ class BakomaFonts(TruetypeFonts):
                           ('\leftbrace', '{'),
                           ('\rightbrace', '}'),
                           ('\leftbracket', '['),
-                          ('\rightbracket', ']')]:
+                          ('\rightbracket', ']'),
+                          (r'\{', '{'),
+                          (r'\}', '}'),
+                          (r'\[', '['),
+                          (r'\]', ']')]:
         _size_alternatives[alias] = _size_alternatives[target]
 
     def get_sized_alternatives_for_symbol(self, fontname, sym):
@@ -1061,6 +1063,9 @@ class StixFonts(UnicodeFonts):
 
     _size_alternatives = {}
     def get_sized_alternatives_for_symbol(self, fontname, sym):
+        fixes = {'\{': '{', '\}': '}', '\[': '[', '\]': ']'}
+        sym = fixes.get(sym, sym)
+
         alternatives = self._size_alternatives.get(sym)
         if alternatives:
             return alternatives
@@ -1920,7 +1925,7 @@ class AutoHeightChar(Hlist):
     fonts), the correct glyph will be selected, otherwise this will
     always just return a scaled version of the glyph.
     """
-    def __init__(self, c, height, depth, state, always=False):
+    def __init__(self, c, height, depth, state, always=False, factor=None):
         alternatives = state.font_output.get_sized_alternatives_for_symbol(
             state.font, c)
 
@@ -1932,7 +1937,8 @@ class AutoHeightChar(Hlist):
             if char.height + char.depth >= target_total:
                 break
 
-        factor = target_total / (char.height + char.depth)
+        if factor is None:
+            factor = target_total / (char.height + char.depth)
         state.fontsize *= factor
         char = Char(sym, state)
 
@@ -2205,9 +2211,9 @@ class Parser(object):
       | \| / \backslash \uparrow \downarrow \updownarrow \Uparrow
       \Downarrow \Updownarrow .""".split())
 
-    _left_delim = set(r"( [ { < \lfloor \langle \lceil".split())
+    _left_delim = set(r"( [ \{ < \lfloor \langle \lceil".split())
 
-    _right_delim = set(r") ] } > \rfloor \rangle \rceil".split())
+    _right_delim = set(r") ] \} > \rfloor \rangle \rceil".split())
 
     def __init__(self):
         # All forward declarations are here
@@ -2863,8 +2869,6 @@ class Parser(object):
                 ldelim = '.'
             if rdelim == '':
                 rdelim = '.'
-            elif rdelim == r'\}':
-                rdelim = '}'
             return self._auto_sized_delimiter(ldelim, result, rdelim)
         return result
 
@@ -2974,16 +2978,18 @@ class Parser(object):
         if len(middle):
             height = max([x.height for x in middle])
             depth = max([x.depth for x in middle])
+            factor = None
         else:
             height = 0
             depth = 0
+            factor = 1.0
         parts = []
         # \left. and \right. aren't supposed to produce any symbols
         if front != '.':
-            parts.append(AutoHeightChar(front, height, depth, state))
+            parts.append(AutoHeightChar(front, height, depth, state, factor=factor))
         parts.extend(middle)
         if back != '.':
-            parts.append(AutoHeightChar(back, height, depth, state))
+            parts.append(AutoHeightChar(back, height, depth, state, factor=factor))
         hlist = Hlist(parts)
         return hlist
 

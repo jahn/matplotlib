@@ -2,8 +2,8 @@
 
 """
 
-You can enable picking by setting the"picker" property of an artist
-(eg a matplotlib Line2D, Text, Patch, Polygon, AxesImage,
+You can enable picking by setting the "picker" property of an artist
+(for example, a matplotlib Line2D, Text, Patch, Polygon, AxesImage,
 etc...)
 
 There are a variety of meanings of the picker property
@@ -15,27 +15,27 @@ There are a variety of meanings of the picker property
       the artist
 
     float - if picker is a number it is interpreted as an
-      epsilon tolerance in points and the the artist will fire
+      epsilon tolerance in points and the artist will fire
       off an event if it's data is within epsilon of the mouse
       event.  For some artists like lines and patch collections,
       the artist may provide additional data to the pick event
-      that is generated, eg the indices of the data within
+      that is generated, for example, the indices of the data within
       epsilon of the pick event
 
-     function - if picker is callable, it is a user supplied
+    function - if picker is callable, it is a user supplied
       function which determines whether the artist is hit by the
       mouse event.
 
          hit, props = picker(artist, mouseevent)
 
-      to determine the hit test.  if the mouse event is over the
+      to determine the hit test.  If the mouse event is over the
       artist, return hit=True and props is a dictionary of properties
       you want added to the PickEvent attributes
 
 
 After you have enabled an artist for picking by setting the "picker"
 property, you need to connect to the figure canvas pick_event to get
-pick callbacks on mouse press events.  Eg,
+pick callbacks on mouse press events.  For example,
 
   def pick_handler(event):
       mouseevent = event.mouseevent
@@ -47,9 +47,9 @@ The pick event (matplotlib.backend_bases.PickEvent) which is passed to
 your callback is always fired with two attributes:
 
   mouseevent - the mouse event that generate the pick event.  The
-    mouse event in turn has attributes like x and y (the coords in
-    display space, eg pixels from left, bottom) and xdata, ydata (the
-    coords in data space).  Additionaly, you can get information about
+    mouse event in turn has attributes like x and y (the coordinates in
+    display space, such as pixels from left, bottom) and xdata, ydata (the
+    coords in data space).  Additionally, you can get information about
     which buttons were pressed, which keys were pressed, which Axes
     the mouse is over, etc.  See matplotlib.backend_bases.MouseEvent
     for details.
@@ -58,8 +58,8 @@ your callback is always fired with two attributes:
 
 Additionally, certain artists like Line2D and PatchCollection may
 attach additional meta data like the indices into the data that meet
-the picker criteria (eg all the points in the line that are within the
-specified epsilon tolerance)
+the picker criteria (for example, all the points in the line that are within
+the specified epsilon tolerance)
 
 The examples below illustrate each of these methods.
 """
@@ -67,10 +67,10 @@ The examples below illustrate each of these methods.
 from __future__ import print_function
 from matplotlib.pyplot import figure, show
 from matplotlib.lines import Line2D
-from matplotlib.patches import Patch, Rectangle
+from matplotlib.patches import Rectangle
 from matplotlib.text import Text
 from matplotlib.image import AxesImage
-import numpy as npy
+import numpy as np
 from numpy.random import rand
 
 if 1: # simple picking, lines, rectangles and text
@@ -94,7 +94,7 @@ if 1: # simple picking, lines, rectangles and text
             xdata = thisline.get_xdata()
             ydata = thisline.get_ydata()
             ind = event.ind
-            print('onpick1 line:', zip(npy.take(xdata, ind), npy.take(ydata, ind)))
+            print('onpick1 line:', zip(np.take(xdata, ind), np.take(ydata, ind)))
         elif isinstance(event.artist, Rectangle):
             patch = event.artist
             print('onpick1 patch:', patch.get_path())
@@ -126,12 +126,12 @@ if 1: # picking with a custom hit test function
         xdata = line.get_xdata()
         ydata = line.get_ydata()
         maxd = 0.05
-        d = npy.sqrt((xdata-mouseevent.xdata)**2. + (ydata-mouseevent.ydata)**2.)
+        d = np.sqrt((xdata-mouseevent.xdata)**2. + (ydata-mouseevent.ydata)**2.)
 
-        ind = npy.nonzero(npy.less_equal(d, maxd))
+        ind = np.nonzero(np.less_equal(d, maxd))
         if len(ind):
-            pickx = npy.take(xdata, ind)
-            picky = npy.take(ydata, ind)
+            pickx = np.take(xdata, ind)
+            picky = np.take(ydata, ind)
             props = dict(ind=ind, pickx=pickx, picky=picky)
             return True, props
         else:
@@ -152,7 +152,7 @@ if 1: # picking on a scatter plot (matplotlib.collections.RegularPolyCollection)
     x, y, c, s = rand(4, 100)
     def onpick3(event):
         ind = event.ind
-        print('onpick3 scatter:', ind, npy.take(x, ind), npy.take(y, ind))
+        print('onpick3 scatter:', ind, np.take(x, ind), np.take(y, ind))
 
     fig = figure()
     ax1 = fig.add_subplot(111)
