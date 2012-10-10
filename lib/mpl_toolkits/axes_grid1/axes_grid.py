@@ -683,7 +683,7 @@ class ImageGrid(Grid):
         v_ax_pos = []
         v_cb_pos = []
         for row,ax in enumerate(self._row_refax[::-1]):
-            if v: v.append(self._horiz_pad_size) #Size.Fixed(self._axes_pad))
+            if v: v.append(self._vert_pad_size) #Size.Fixed(self._axes_pad))
 
             if ax:
                 sz = Size.AxesY(ax)
