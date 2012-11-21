@@ -512,7 +512,7 @@ class ImageGrid(Grid):
             ngrids = self._nrows * self._ncols
         else:
             if (ngrids > self._nrows * self._ncols) or  (ngrids <= 0):
-                raise Exception("")
+                raise Exception("ngrids cannot be greater than nrows*ncols")
 
         self.ngrids = ngrids
 
